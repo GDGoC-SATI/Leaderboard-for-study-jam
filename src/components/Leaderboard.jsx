@@ -1,5 +1,4 @@
-import React, { useMemo, useState } from "react";
-import pic from "../assets/Photo.jpg";
+import React, { useMemo, useState, useEffect } from "react";
 
 const colors = [
   "bg-fuchsia-500","bg-emerald-500","bg-cyan-500","bg-indigo-500",
@@ -24,35 +23,28 @@ function initials(name = "") {
     .toUpperCase();
 }
 
-// Helpers for your dataset
 function toHttp(url = "") {
   if (!url) return "";
   return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
+
 function orgFromEmail(email = "") {
   const m = String(email).match(/@(.+)$/);
   return m ? m[1] : "";
 }
+
 function normalizeParticipant(p, idx) {
   const name = p.name ?? p.userName ?? "Unnamed";
   const email = p.email ?? p.userEmail ?? "";
-  const badges =
-    typeof p.badges === "number"
-      ? p.badges
-      : typeof p.numSkillBadgesCompleted === "number"
-      ? p.numSkillBadgesCompleted
-      : 0;
 
   return {
     id: p.id ?? p.userEmail ?? p.googleCloudProfileURL ?? `row-${idx}`,
     name,
     email,
     org: p.org ?? orgFromEmail(email),
-    track: p.track ?? null, // your data has no track; leave null
-    badges,
-    points: typeof p.points === "number" ? p.points : undefined,
-
-    // carry-through fields
+    track: p.track ?? null,
+    badges: 0, // Start with 0, will be updated from API
+    points: 0, // Start with 0, will be updated from API
     googleCloudProfileURL: p.googleCloudProfileURL ?? p.profileUrl ?? "",
     profileURLStatus: p.profileURLStatus,
     accessCodeRedemptionStatus: p.accessCodeRedemptionStatus,
@@ -64,25 +56,158 @@ function normalizeParticipant(p, idx) {
   };
 }
 
+// Fetch data from your API for a single participant
+async function fetchParticipantStats(profileURL) {
+  if (!profileURL) return null;
+  
+  try {
+    const url = toHttp(profileURL);
+    const apiUrl = `https://skill-boost-stats-api.onrender.com/v1/?url=${encodeURIComponent(url)}`;
+    
+    const response = await fetch(apiUrl, {
+      mode: 'cors',
+      headers: {
+        'Accept': 'application/json',
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to fetch stats for ${url}: ${response.status}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    return {
+      points: data.points ?? 0,
+      badges: data.badges ?? 0
+    };
+  } catch (error) {
+    console.error(`Error fetching stats for ${profileURL}:`, error.message);
+    return null;
+  }
+}
+
+// Fetch with concurrency limit to avoid overwhelming the API
+async function fetchWithConcurrencyLimit(participants, limit = 50, onProgress) {
+  const results = [];
+  const executing = [];
+  let completed = 0;
+  
+  for (const [index, p] of participants.entries()) {
+    const promise = fetchParticipantStats(p.googleCloudProfileURL)
+      .then(stats => {
+        completed++;
+        if (onProgress) onProgress(completed, participants.length);
+        return { id: p.id, stats, index };
+      });
+    
+    results.push(promise);
+    
+    if (limit <= participants.length) {
+      const e = promise.then(() => executing.splice(executing.indexOf(e), 1));
+      executing.push(e);
+      
+      if (executing.length >= limit) {
+        await Promise.race(executing);
+      }
+    }
+  }
+  
+  return results; // Return promises, not awaited results
+}
+
+// Fetch all participants' data in parallel - NO BATCHING for maximum speed
+async function fetchAllParticipantsStats(participants) {
+  // Launch ALL requests simultaneously for maximum speed
+  const allPromises = participants.map(p => 
+    fetchParticipantStats(p.googleCloudProfileURL)
+      .then(stats => ({ id: p.id, stats }))
+  );
+  
+  return await Promise.all(allPromises);
+}
+
 export default function Leaderboard({ participants: rawParticipants }) {
   const [q, setQ] = useState("");
   const [track, setTrack] = useState("All");
-  const [sortBy, setSortBy] = useState("badges"); // "name" | "badges"
-  const [sortDir, setSortDir] = useState("desc"); // "desc" | "asc"
+  const [sortBy, setSortBy] = useState("badges");
+  const [sortDir, setSortDir] = useState("desc");
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [participants, setParticipants] = useState([]);
+  const [fetchingCount, setFetchingCount] = useState(0);
 
-  // Normalize data
-  const participants = useMemo(
-    () => (rawParticipants || []).map(normalizeParticipant),
-    [rawParticipants]
-  );
+  // Initialize and fetch real-time data
+  useEffect(() => {
+    async function loadData() {
+      setInitialLoading(true);
+      setLoadingProgress(0);
+      
+      // Normalize initial data
+      const normalized = (rawParticipants || []).map(normalizeParticipant);
+      const totalParticipants = normalized.length;
+      setFetchingCount(totalParticipants);
+      
+      // Set initial participants (with default values)
+      setParticipants(normalized);
+      
+      // Launch ALL requests immediately with concurrency control
+      let completed = 0;
+      let firstResponseReceived = false;
+      
+      // Create all fetch promises
+      const allPromises = normalized.map(async (p) => {
+        const stats = await fetchParticipantStats(p.googleCloudProfileURL);
+        
+        completed++;
+        const progress = Math.round((completed / totalParticipants) * 100);
+        setLoadingProgress(progress);
+        setFetchingCount(totalParticipants - completed);
+        
+        // Hide loading screen on FIRST result
+        if (!firstResponseReceived) {
+          firstResponseReceived = true;
+          setInitialLoading(false);
+        }
+        
+        return { id: p.id, stats };
+      });
+      
+      // Process results as they arrive
+      allPromises.forEach(async (promise) => {
+        const result = await promise;
+        
+        if (result.stats) {
+          setParticipants(prev => {
+            const updated = [...prev];
+            const idx = updated.findIndex(p => p.id === result.id);
+            if (idx !== -1) {
+              updated[idx] = {
+                ...updated[idx],
+                badges: result.stats.badges,
+                points: result.stats.points
+              };
+            }
+            return updated;
+          });
+        }
+      });
+      
+      // Wait for all to complete
+      await Promise.all(allPromises);
+      setFetchingCount(0);
+    }
+    
+    if (rawParticipants && rawParticipants.length > 0) {
+      loadData();
+    }
+  }, [rawParticipants]);
 
-  // Do we have any track values?
   const hasTrack = useMemo(
     () => participants.some((p) => p.track && String(p.track).trim()),
     [participants]
   );
 
-  // If badges exist, rank by badges; else by points (fallback)
   const scoreKey = useMemo(() => {
     const hasBadges = participants.some((p) => typeof p?.badges === "number");
     return hasBadges ? "badges" : "points";
@@ -124,7 +249,6 @@ export default function Leaderboard({ participants: rawParticipants }) {
           sensitivity: "base",
         });
       } else {
-        // sortBy === "badges"
         cmp = (a.badges || 0) - (b.badges || 0);
       }
       return sortDir === "asc" ? cmp : -cmp;
@@ -132,36 +256,50 @@ export default function Leaderboard({ participants: rawParticipants }) {
     return rows;
   }, [participants, q, track, sortBy, sortDir, hasTrack]);
 
+  // Loading Screen - only shown initially
+  if (initialLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#0b1220] via-slate-950 to-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="mb-6">
+            <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-white/20 border-t-sky-500"></div>
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Loading Leaderboard</h2>
+          <p className="text-white/60 mb-4">Starting data fetch from Google Cloud...</p>
+          <p className="text-xs text-white/50 mb-4">Waiting for first response...</p>
+          <div className="w-64 mx-auto bg-white/10 rounded-full h-2 overflow-hidden">
+            <div 
+              className="bg-sky-500 h-full transition-all duration-300 ease-out animate-pulse"
+              style={{ width: '30%' }}
+            ></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0b1220] via-slate-950 to-black text-white">
-      {/* Top bar */}
       <div className="sticky top-0 z-20 border-b border-white/10 bg-black/30 backdrop-blur"></div>
 
       <div className="mx-auto max-w-6xl px-4 py-8">
-        {/* Header + Controls */}
         <header className="mb-6">
           <div className="flex items-start space-x-4">
-            {/* Image on the left */}
-            <img
-              src={pic}
-              alt="SATI Logo"
-              className="w-16 h-16 object-contain rounded-full"
-            />
-
-            {/* Text content on the right */}
+            <div className="w-16 h-16 bg-gradient-to-br from-sky-500 to-blue-600 rounded-full flex items-center justify-center text-2xl font-bold">
+              S
+            </div>
+            
             <div>
               <h1 className="text-3xl font-extrabold tracking-tight">
                 SATI Study Jam Leaderboard
               </h1>
               <p className="mt-1 text-sm text-white/70">
-                Google Study Jam 2025-26 Progress for Samrat Ashok Technological
-                Institute Vidisha
+                Google Study Jam 2025-26 Progress for Samrat Ashok Technological Institute Vidisha
               </p>
             </div>
           </div>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-            {/* Search */}
             <div className="relative sm:w-1/2">
               <svg
                 viewBox="0 0 24 24"
@@ -185,7 +323,6 @@ export default function Leaderboard({ participants: rawParticipants }) {
               />
             </div>
 
-            {/* Track filter (only if tracks exist) */}
             {hasTrack && (
               <select
                 value={track}
@@ -200,7 +337,6 @@ export default function Leaderboard({ participants: rawParticipants }) {
               </select>
             )}
 
-            {/* Sort By */}
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
@@ -210,7 +346,6 @@ export default function Leaderboard({ participants: rawParticipants }) {
               <option value="name">Sort: Name (A–Z)</option>
             </select>
 
-            {/* Direction */}
             <button
               onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
               className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 transition"
@@ -221,7 +356,6 @@ export default function Leaderboard({ participants: rawParticipants }) {
           </div>
         </header>
 
-        {/* Podium */}
         <section className="mb-8">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {[1, 0, 2].map((idx, col) => {
@@ -279,14 +413,13 @@ export default function Leaderboard({ participants: rawParticipants }) {
           </div>
         </section>
 
-        {/* Leaderboard list */}
         <section className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_8px_24px_rgba(0,0,0,0.35)] overflow-hidden">
           <div className="grid grid-cols-12 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-wide text-white/60">
             <div className="col-span-1">Rank</div>
             <div className={`${hasTrack ? "col-span-5 sm:col-span-5" : "col-span-6 sm:col-span-5"}`}>
               Participant
             </div>
-            <div className="hidden col-span-3 sm:block">Profile</div>
+            <div className="hidden col-span-3 sm:block">Points</div>
             {hasTrack && (
               <div className="col-span-3 sm:col-span-2 text-right sm:text-left">Track</div>
             )}
@@ -316,8 +449,6 @@ export default function Leaderboard({ participants: rawParticipants }) {
                     </div>
                     <div>
                       <div className="text-sm font-medium">{p.name}</div>
-
-                      {/* On mobile, show org + small profile link */}
                       <div className="text-xs text-white/60 sm:hidden">
                         {p.org || "—"}
                         {profileUrl && (
@@ -337,7 +468,6 @@ export default function Leaderboard({ participants: rawParticipants }) {
                     </div>
                   </div>
 
-                  {/* Profile column (desktop) */}
                   <div className="hidden col-span-3 text-sm sm:block">
                     {profileUrl ? (
                       <a
@@ -379,8 +509,8 @@ export default function Leaderboard({ participants: rawParticipants }) {
           </ul>
         </section>
 
-        <div className="flex items-center gap-3 text-sm text-white/70">
-          <span>Last updated: 9 Oct 2025 9:38:45 PM</span>
+        <div className="mt-4 flex items-center gap-3 text-sm text-white/70">
+          <span>Live data • Updated in real-time</span>
         </div>
       </div>
     </div>

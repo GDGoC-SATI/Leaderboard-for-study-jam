@@ -1041,7 +1041,6 @@ export default [
     numArcadeGamesCompleted: 0,
     completedArcadeGames: ""
   },
-  export const usersData = [
   {
     userName: "Divya Talach",
     userEmail: "talachdivya23@gmail.com",

@@ -1,5 +1,6 @@
 
 export default [
+{ userName: "Mahima Prabhakar", userEmail: "mahimaprabhakar03@gmail.com", googleCloudProfileURL: "https://www.cloudskillsboost.google/public_profiles/ca5a08f9-a8f0-4d87-ab1b-c4eab15d9dc3", profileURLStatus: "All Good", accessCodeRedemptionStatus: "Yes", allSkillBadgesAndGamesCompleted: "No", numSkillBadgesCompleted: 5, completedSkillBadges: "Develop Gen AI Apps with Gemini and Streamlit [Skill Badge]", numArcadeGamesCompleted: 1, completedArcadeGames: "Level 3: Generative AI [Game]" },
 
 { userName: "Kalp Soni", userEmail: "sonikalp2004@gmail.com", googleCloudProfileURL: "https://www.cloudskillsboost.google/public_profiles/98cf9f59-bd73-48af-b3a6-6bf6eb5ee15a", profileURLStatus: "All Good", accessCodeRedemptionStatus: "No", allSkillBadgesAndGamesCompleted: "No", numSkillBadgesCompleted: 0, completedSkillBadges: "", numArcadeGamesCompleted: 0, completedArcadeGames: "" },
 { userName: "Yash Chouhan", userEmail: "yash28cse154@satiengg.in", googleCloudProfileURL: "https://www.cloudskillsboost.google/public_profiles/924e36b4-783d-407f-bd79-6457bc5099d7", profileURLStatus: "All Good", accessCodeRedemptionStatus: "No", allSkillBadgesAndGamesCompleted: "No", numSkillBadgesCompleted: 0, completedSkillBadges: "", numArcadeGamesCompleted: 0, completedArcadeGames: "" },

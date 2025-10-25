@@ -1,10 +1,21 @@
+updates Leaderboard.jsx
+
 import React, { useMemo, useState } from "react";
 import pic from "../assets/Photo.jpg";
 
 const colors = [
-  "bg-fuchsia-500","bg-emerald-500","bg-cyan-500","bg-indigo-500",
-  "bg-rose-500","bg-amber-500","bg-sky-500","bg-violet-500",
-  "bg-lime-500","bg-teal-500","bg-blue-500","bg-pink-500",
+  "bg-fuchsia-500",
+  "bg-emerald-500",
+  "bg-cyan-500",
+  "bg-indigo-500",
+  "bg-rose-500",
+  "bg-amber-500",
+  "bg-sky-500",
+  "bg-violet-500",
+  "bg-lime-500",
+  "bg-teal-500",
+  "bg-blue-500",
+  "bg-pink-500",
 ];
 
 function pickColor(key = "") {
@@ -58,7 +69,9 @@ function normalizeParticipant(p, idx) {
     accessCodeRedemptionStatus: p.accessCodeRedemptionStatus,
     allSkillBadgesAndGamesCompleted: p.allSkillBadgesAndGamesCompleted,
     numArcadeGamesCompleted:
-      typeof p.numArcadeGamesCompleted === "number" ? p.numArcadeGamesCompleted : 0,
+      typeof p.numArcadeGamesCompleted === "number"
+        ? p.numArcadeGamesCompleted
+        : 0,
     completedSkillBadges: p.completedSkillBadges ?? "",
     completedArcadeGames: p.completedArcadeGames ?? "",
   };
@@ -67,7 +80,7 @@ function normalizeParticipant(p, idx) {
 export default function Leaderboard({ participants: rawParticipants }) {
   const [q, setQ] = useState("");
   const [track, setTrack] = useState("All");
-  const [sortBy, setSortBy] = useState("badges"); // "name" | "badges"
+  const [sortBy, setSortBy] = useState("badges"); // "name" | "badges" | "arcade"
   const [sortDir, setSortDir] = useState("desc"); // "desc" | "asc"
 
   // Normalize data
@@ -96,6 +109,7 @@ export default function Leaderboard({ participants: rawParticipants }) {
   }, [participants, hasTrack]);
 
   const rankedAll = useMemo(() => {
+    // Note: Overall ranking remains based on the primary scoreKey (badges/points)
     const rows = [...participants].sort(
       (a, b) => (b?.[scoreKey] || 0) - (a?.[scoreKey] || 0)
     );
@@ -106,7 +120,8 @@ export default function Leaderboard({ participants: rawParticipants }) {
 
   const filteredSorted = useMemo(() => {
     let rows = [...participants];
-    if (hasTrack && track !== "All") rows = rows.filter((r) => r.track === track);
+    if (hasTrack && track !== "All")
+      rows = rows.filter((r) => r.track === track);
     if (q.trim()) {
       const term = q.toLowerCase();
       rows = rows.filter(
@@ -123,9 +138,11 @@ export default function Leaderboard({ participants: rawParticipants }) {
         cmp = String(a.name || "").localeCompare(String(b.name || ""), undefined, {
           sensitivity: "base",
         });
-      } else {
-        // sortBy === "badges"
+      } else if (sortBy === "badges") {
         cmp = (a.badges || 0) - (b.badges || 0);
+      } else if (sortBy === "arcade") {
+        // NEW SORTING LOGIC
+        cmp = (a.numArcadeGamesCompleted || 0) - (b.numArcadeGamesCompleted || 0);
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -200,13 +217,14 @@ export default function Leaderboard({ participants: rawParticipants }) {
               </select>
             )}
 
-            {/* Sort By */}
+            {/* Sort By - ADDED NEW OPTION */}
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
               className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-white/20 focus:ring-2 focus:ring-white/10"
             >
               <option value="badges">Sort: Skill Badges</option>
+              <option value="arcade">Sort: Arcade Games</option>
               <option value="name">Sort: Name (A–Z)</option>
             </select>
 
@@ -236,10 +254,16 @@ export default function Leaderboard({ participants: rawParticipants }) {
                   ? "ring-slate-200/60"
                   : "ring-amber-700/60";
               const crown = place === 1 ? "👑" : place === 2 ? "🥈" : "🥉";
+              // Display both badges and arcade games if we have them
               const displayMetric =
-                typeof p.badges === "number"
+                typeof p.badges === "number" && p.badges > 0
                   ? `${p.badges} badges`
                   : `${p.points ?? 0} pts`;
+              const displayArcadeGames =
+                p.numArcadeGamesCompleted > 0
+                  ? ` + ${p.numArcadeGamesCompleted} games`
+                  : "";
+
               const profileUrl = toHttp(p.googleCloudProfileURL);
 
               return (
@@ -250,7 +274,9 @@ export default function Leaderboard({ participants: rawParticipants }) {
                   }`}
                 >
                   <div className="mb-2 text-xl">{crown}</div>
-                  <div className={`mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full ring-2 ${ring}`}>
+                  <div
+                    className={`mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full ring-2 ${ring}`}
+                  >
                     {profileUrl ? (
                       <a
                         href={profileUrl}
@@ -262,7 +288,9 @@ export default function Leaderboard({ participants: rawParticipants }) {
                         {initials(p.name)}
                       </a>
                     ) : (
-                      <div className={`flex h-14 w-14 items-center justify-center rounded-full ${color} text-white font-semibold`}>
+                      <div
+                        className={`flex h-14 w-14 items-center justify-center rounded-full ${color} text-white font-semibold`}
+                      >
                         {initials(p.name)}
                       </div>
                     )}
@@ -271,7 +299,10 @@ export default function Leaderboard({ participants: rawParticipants }) {
                   <div className="mt-1 font-semibold">{p.name}</div>
                   <div className="text-xs text-white/60">{p.org}</div>
                   <div className="mt-3">
-                    <span className="rounded-md bg-white/10 px-2 py-1 text-sm">{displayMetric}</span>
+                    <span className="rounded-md bg-white/10 px-2 py-1 text-sm">
+                      {displayMetric}
+                      {displayArcadeGames}
+                    </span>
                   </div>
                 </div>
               );
@@ -281,17 +312,37 @@ export default function Leaderboard({ participants: rawParticipants }) {
 
         {/* Leaderboard list */}
         <section className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_8px_24px_rgba(0,0,0,0.35)] overflow-hidden">
+          {/* List Header */}
           <div className="grid grid-cols-12 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-wide text-white/60">
             <div className="col-span-1">Rank</div>
-            <div className={`${hasTrack ? "col-span-5 sm:col-span-5" : "col-span-6 sm:col-span-5"}`}>
+            <div
+              className={`${
+                hasTrack ? "col-span-4 sm:col-span-4" : "col-span-5 sm:col-span-4"
+              }`}
+            >
               Participant
             </div>
-            <div className="hidden col-span-3 sm:block">Profile</div>
+            <div className="hidden col-span-2 sm:block">Profile</div>
             {hasTrack && (
-              <div className="col-span-3 sm:col-span-2 text-right sm:text-left">Track</div>
+              <div className="col-span-2 sm:col-span-2 text-right sm:text-left">
+                Track
+              </div>
             )}
-            <div className={`${hasTrack ? "col-span-3 sm:col-span-1" : "col-span-5 sm:col-span-3"} text-right`}>
-              Skill Badges
+            {/* Adjusted column span */}
+            <div
+              className={`${
+                hasTrack ? "col-span-2 sm:col-span-1" : "col-span-3 sm:col-span-1"
+              } text-right`}
+            >
+              Badges
+            </div>
+            {/* NEW COLUMN: Arcade Games */}
+            <div
+              className={`${
+                hasTrack ? "col-span-3 sm:col-span-2" : "col-span-4 sm:col-span-3"
+              } text-right`}
+            >
+              Arcade Games
             </div>
           </div>
 
@@ -308,9 +359,15 @@ export default function Leaderboard({ participants: rawParticipants }) {
                 >
                   <div className="col-span-1 text-sm text-white/80">#{rank}</div>
 
-                  <div className={`${hasTrack ? "col-span-5 sm:col-span-5" : "col-span-6 sm:col-span-5"} flex items-center gap-3`}>
+                  <div
+                    className={`${
+                      hasTrack ? "col-span-4 sm:col-span-4" : "col-span-5 sm:col-span-4"
+                    } flex items-center gap-3`}
+                  >
                     <div className="flex h-9 w-9 items-center justify-center rounded-full ring-1 ring-white/15">
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-full ${color} text-white text-sm font-semibold`}>
+                      <div
+                        className={`flex h-8 w-8 items-center justify-center rounded-full ${color} text-white text-sm font-semibold`}
+                      >
                         {initials(p.name)}
                       </div>
                     </div>
@@ -338,7 +395,7 @@ export default function Leaderboard({ participants: rawParticipants }) {
                   </div>
 
                   {/* Profile column (desktop) */}
-                  <div className="hidden col-span-3 text-sm sm:block">
+                  <div className="hidden col-span-2 text-sm sm:block">
                     {profileUrl ? (
                       <a
                         href={profileUrl}
@@ -348,9 +405,23 @@ export default function Leaderboard({ participants: rawParticipants }) {
                         title="Open Google Cloud profile"
                       >
                         View profile
-                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 opacity-80" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 5h6m0 0v6m0-6L10 14" />
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 13v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" />
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-3.5 w-3.5 opacity-80"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M13 5h6m0 0v6m0-6L10 14"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M19 13v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6"
+                          />
                         </svg>
                       </a>
                     ) : (
@@ -359,13 +430,29 @@ export default function Leaderboard({ participants: rawParticipants }) {
                   </div>
 
                   {hasTrack && (
-                    <div className="col-span-3 text-right text-xs sm:col-span-2 sm:text-left">
-                      <span className="rounded-md bg-white/10 px-2 py-1">{p.track || "-"}</span>
+                    <div className="col-span-2 text-right text-xs sm:col-span-2 sm:text-left">
+                      <span className="rounded-md bg-white/10 px-2 py-1">
+                        {p.track || "-"}
+                      </span>
                     </div>
                   )}
 
-                  <div className={`${hasTrack ? "col-span-3 sm:col-span-1" : "col-span-5 sm:col-span-3"} text-right font-semibold`}>
+                  {/* Skill Badges Column - Adjusted col-span */}
+                  <div
+                    className={`${
+                      hasTrack ? "col-span-2 sm:col-span-1" : "col-span-3 sm:col-span-1"
+                    } text-right font-semibold`}
+                  >
                     {p.badges ?? 0}
+                  </div>
+
+                  {/* NEW COLUMN: Arcade Games */}
+                  <div
+                    className={`${
+                      hasTrack ? "col-span-3 sm:col-span-2" : "col-span-4 sm:col-span-3"
+                    } text-right font-semibold text-amber-300`}
+                  >
+                    {p.numArcadeGamesCompleted ?? 0}
                   </div>
                 </li>
               );
@@ -380,7 +467,7 @@ export default function Leaderboard({ participants: rawParticipants }) {
         </section>
 
         <div className="flex items-center gap-3 text-sm text-white/70">
-          <span>Last updated: 24 Oct 2025 09:05:35 AM</span>
+          <span>Last updated: 24 oct 2025</span>
         </div>
       </div>
     </div>

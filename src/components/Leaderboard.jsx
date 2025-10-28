@@ -276,6 +276,10 @@ export default function Leaderboard({ participants: rawParticipants }) {
             )}
           </ul>
         </section>
+
+        <div className="flex items-center gap-3 text-sm text-white/70">
+          <span>Last updated: 27 Oct 2025 01:05:35 PM</span>
+        </div>
       </div>
     </div>
   );
